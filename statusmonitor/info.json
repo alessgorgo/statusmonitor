@@ -1,0 +1,14 @@
+{
+  "author": ["Fleeq"],
+  "name": "StatusMonitor",
+  "short": "One live embed tracking the status of your services.",
+  "description": "Monitor links or host:port services and keep a single embed updated every minute with a per-service status bar built from the last checks. Configurable channel, mentioned roles, colour, title, interval and history length.",
+  "install_msg": "Thanks for installing StatusMonitor!\n\nSet it up with:\n1. `[p]statusmon channel #status`\n2. `[p]statusmon add \"My API\" https://api.example.com/health`\n3. `[p]statusmon roles @Ops` (optional)\n4. `[p]statusmon color #00b894` (optional)\n\nThe panel then updates itself every minute.",
+  "requirements": [],
+  "tags": ["status", "uptime", "monitor", "utility"],
+  "min_bot_version": "3.4.0",
+  "hidden": false,
+  "disabled": false,
+  "type": "COG",
+  "end_user_data_statement": "This cog stores server configuration (channel, roles, colour) and the reachability history of the services an administrator adds. It stores no personal data about end users."
+}
