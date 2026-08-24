@@ -10,18 +10,32 @@ Fleeq Service Status
 Last check: 12 seconds ago
 
 🟢  Fleeq API
-🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟨🟩🟩
-`100.0%` uptime • Operational • 128ms
+████████████████████████▄█████     (green, one yellow dip)
+`100.0%` uptime • Operational • 133ms
 
 🔴  Postgres
-🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥
-` 75.0%` uptime • Down • Timed out
+██████████████████████░░░░░░░░     (green, then red)
+` 73.3%` uptime • Down • Timed out
 
 Checked every 60s • 3 service(s)
 ```
 
-Each square is one past check, oldest on the left, newest on the right:
-🟩 up · 🟨 degraded (slow) · 🟥 down · ⬜ no data yet.
+Each cell is one past check, oldest on the left, newest on the right.
+
+## Uptime bar styles
+
+`[p]statusmon style <name>` switches how the bar is drawn:
+
+| Style | Looks like | Notes |
+| --- | --- | --- |
+| `ansi` | `████▄██░░████` in green/yellow/red | **Default.** Colour comes from a Discord `ansi` code block. Compact: 60 checks fit where 20 emoji did |
+| `mono` | `████▄██░░████` in plain grey | Same shapes, no colour. Never depends on client ANSI support |
+| `blocks` | 🟩🟩🟨🟥🟩 | The big emoji squares |
+| `emoji` | your own | Set with `[p]statusmon emoji <up> <degraded> <down> [unknown]` — custom server emoji work, so you can use thin bar emoji like a real status page |
+| `minimal` | `▂▃▂▄▅▂▁▂▃` + `99.4% uptime` | No history bar; a response-time sparkline instead, with `·` where a check failed |
+
+The shapes carry the meaning as well as the colour — `█` up, `▄` degraded, `░` down,
+`·` no data — so `ansi` still reads correctly on a client that does not paint colours.
 
 ## Install
 
@@ -63,7 +77,9 @@ All commands live under `[p]statusmon` (alias `[p]stm`) and need admin or Manage
 | `color <#hex>` | Embed colour — accepts `#00b894`, `0x00b894` or `blurple` |
 | `title <text>` | Panel title |
 | `note [text]` | Custom line under the summary; markdown works, empty clears it |
-| `history <5-40>` | How many past checks the bar shows (default 20) |
+| `history <5-60>` | How many past checks the bar shows (default 20) |
+| `style <name>` | Uptime bar style: `ansi`, `mono`, `blocks`, `emoji`, `minimal` |
+| `emoji <up> <deg> <down> [unknown]` | Your own bar emoji, and switch to the `emoji` style |
 | `interval <60-3600>` | Seconds between checks (default 60) |
 | `timeout <1-30>` | Seconds before a check counts as down (default 10) |
 | `slow <ms>` | Latency above which a service is degraded/yellow (default 2000) |
@@ -90,8 +106,8 @@ panel. It only accepts messages the bot itself wrote, since a bot cannot edit an
 else's message.
 
 To change what the panel says, use `[p]statusmon title`, `[p]statusmon note` for a free
-line of text (maintenance windows, a link to your status page), `[p]statusmon color`
-and `[p]statusmon links`. Every one of these rewrites the existing message in place.
+line of text (maintenance windows, a link to your status page), `[p]statusmon color`,
+`[p]statusmon style` and `[p]statusmon links`. Every one of these rewrites the existing message in place.
 
 ## About the role ping
 

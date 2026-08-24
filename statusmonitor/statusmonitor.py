@@ -20,12 +20,18 @@ UP, DEGRADED, DOWN, UNKNOWN = 1, 2, 0, -1
 
 CELL = {UP: "\N{LARGE GREEN SQUARE}", DEGRADED: "\N{LARGE YELLOW SQUARE}",
         DOWN: "\N{LARGE RED SQUARE}", UNKNOWN: "\N{WHITE LARGE SQUARE}"}
+# Shape carries the meaning as well as the colour, so the bar still reads on
+# clients that do not paint ANSI code blocks.
+GLYPH = {UP: "\u2588", DEGRADED: "\u2584", DOWN: "\u2591", UNKNOWN: "\u00b7"}
+ANSI = {UP: "32", DEGRADED: "33", DOWN: "31", UNKNOWN: "30"}
+SPARK = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
+STYLES = ("ansi", "mono", "blocks", "emoji", "minimal")
 DOT = {UP: "\N{LARGE GREEN CIRCLE}", DEGRADED: "\N{LARGE YELLOW CIRCLE}",
        DOWN: "\N{LARGE RED CIRCLE}", UNKNOWN: "\N{MEDIUM WHITE CIRCLE}"}
 LABEL = {UP: "Operational", DEGRADED: "Degraded", DOWN: "Down", UNKNOWN: "Unknown"}
 
 TICK = 20  # how often the background loop wakes up, in seconds
-MAX_HISTORY = 40  # hard cap on stored checks per service
+MAX_HISTORY = 60  # hard cap on stored checks per service
 MAX_SERVICES = 20  # embeds allow 25 fields; leave room for the summary
 HOST_PORT_RE = re.compile(r"^(?P<host>[A-Za-z0-9_.\-]+):(?P<port>\d{1,5})$")
 MESSAGE_LINK_RE = re.compile(
@@ -45,6 +51,8 @@ DEFAULT_GUILD = {
     "degraded_ms": 2000,
     "alerts": True,
     "show_links": False,
+    "style": "ansi",
+    "emoji": {},
     "note": "",
     "enabled": True,
     "last_check": 0,
@@ -206,6 +214,9 @@ class StatusMonitor(commands.Cog):
                     history = list(svc.get("history", []))
                     history.append(res["state"])
                     svc["history"] = history[-MAX_HISTORY:]
+                    latencies = list(svc.get("latencies", []))
+                    latencies.append(res["latency"])
+                    svc["latencies"] = latencies[-MAX_HISTORY:]
                     svc["last"] = res
                 data["services"] = {k: dict(v) for k, v in stored.items()}
             await conf.last_check.set(time.time())
@@ -297,6 +308,8 @@ class StatusMonitor(commands.Cog):
             description="\n".join(lines)[:4096],
             timestamp=datetime.now(timezone.utc),
         )
+        style = data.get("style", "ansi")
+        custom = data.get("emoji") or {}
         for svc in services.values():
             last = svc.get("last") or {}
             state = last.get("state", UNKNOWN)
@@ -306,20 +319,49 @@ class StatusMonitor(commands.Cog):
                 detail = f"{LABEL[state]} \N{BULLET} {last['error']}"
             elif last.get("latency") is not None:
                 detail = f"{LABEL[state]} \N{BULLET} {last['latency']}ms"
-            value = self._bar(svc.get("history", []), length)
-            value += f"\n`{_uptime(svc.get('history', []))}` uptime \N{BULLET} {detail}"
+            cells = self._cells(svc.get("history", []), length)
+            parts = []
+            bar = self._render_bar(cells, style, custom)
+            if bar:
+                parts.append(bar)
+            parts.append(f"`{_uptime(svc.get('history', []))}` uptime \N{BULLET} {detail}")
+            if style == "minimal":
+                spark = _sparkline(svc.get("latencies", []), length)
+                if spark:
+                    parts.insert(0, spark)
             if data["show_links"] and svc.get("type") == "http":
-                value += f"\n[{_hostname(svc['target'])}]({svc['target']})"
-            embed.add_field(name=name[:256], value=value[:1024], inline=False)
+                parts.append(f"[{_hostname(svc['target'])}]({svc['target']})")
+            embed.add_field(name=name[:256], value="\n".join(parts)[:1024], inline=False)
 
         embed.set_footer(text=f"Checked every {data['interval']}s \N{BULLET} {len(services)} service(s)")
         return embed
 
     @staticmethod
-    def _bar(history: List[int], length: int) -> str:
+    def _cells(history: List[int], length: int) -> List[int]:
+        """The last `length` checks, left-padded with unknowns."""
         recent = history[-length:]
-        padding = [UNKNOWN] * max(0, length - len(recent))
-        return "".join(CELL[s] for s in padding + recent)
+        return [UNKNOWN] * max(0, length - len(recent)) + recent
+
+    @staticmethod
+    def _bar(history: List[int], length: int) -> str:
+        """Back-compat helper: the emoji bar."""
+        return "".join(CELL[s] for s in StatusMonitor._cells(history, length))
+
+    @staticmethod
+    def _render_bar(cells: List[int], style: str, custom: Dict[str, str]) -> str:
+        if style == "minimal":
+            return ""
+        if style == "blocks":
+            return "".join(CELL[s] for s in cells)
+        if style == "emoji":
+            return "".join(custom.get(str(s)) or CELL[s] for s in cells)
+        if style == "mono":
+            return "```\n" + "".join(GLYPH[s] for s in cells) + "\n```"
+        # ansi: one escape per run of identical states keeps the field small
+        out = []
+        for state, run in _runs(cells):
+            out.append(f"\u001b[0;{ANSI[state]}m" + GLYPH[state] * run)
+        return "```ansi\n" + "".join(out) + "\u001b[0m\n```"
 
     # ---------------------------------------------------------------- commands
 
@@ -458,9 +500,47 @@ class StatusMonitor(commands.Cog):
         await ctx.send("Note set." if text else "Note cleared.")
         await self._refresh_and_report(ctx, silent_when_empty=True)
 
+    @statusmon.command(name="style")
+    async def stm_style(self, ctx: commands.Context, style: str) -> None:
+        """Choose how the uptime bar is drawn.
+
+        `ansi` - coloured bar in a code block (default, most compact)
+        `mono` - the same bar with no colour
+        `blocks` - the big emoji squares
+        `emoji` - your own emoji, set with `[p]statusmon emoji`
+        `minimal` - no bar, just uptime and a response-time sparkline
+        """
+        style = style.lower()
+        if style not in STYLES:
+            await ctx.send(f"Pick one of: {humanize_list([f'`{s}`' for s in STYLES])}.")
+            return
+        await self.config.guild(ctx.guild).style.set(style)
+        await ctx.send(f"Uptime bar style set to `{style}`.")
+        await self._refresh_and_report(ctx, silent_when_empty=True)
+
+    @statusmon.command(name="emoji")
+    async def stm_emoji(
+        self, ctx: commands.Context, up: str, degraded: str, down: str, unknown: str = None
+    ) -> None:
+        """Set your own emoji for the bar and switch to the `emoji` style.
+
+        Custom server emoji work too - the bot must be able to use them.
+        """
+        mapping = {str(UP): up[:32], str(DEGRADED): degraded[:32], str(DOWN): down[:32]}
+        if unknown:
+            mapping[str(UNKNOWN)] = unknown[:32]
+        await self.config.guild(ctx.guild).emoji.set(mapping)
+        await self.config.guild(ctx.guild).style.set("emoji")
+        preview = self._render_bar([UP, UP, DEGRADED, DOWN, UNKNOWN], "emoji", mapping)
+        await ctx.send(f"Bar emoji set: {preview}")
+        await self._refresh_and_report(ctx, silent_when_empty=True)
+
     @statusmon.command(name="history")
     async def stm_history(self, ctx: commands.Context, length: int) -> None:
-        """Set how many past checks the status bar shows (5-40)."""
+        """Set how many past checks the status bar shows (5-60).
+
+        The emoji styles get wide past ~20; `ansi` and `mono` stay readable much longer.
+        """
         if not 5 <= length <= MAX_HISTORY:
             await ctx.send(f"Pick a length between 5 and {MAX_HISTORY}.")
             return
@@ -664,6 +744,7 @@ class StatusMonitor(commands.Cog):
                 f"**Timeout:** {data['timeout']}s\n"
                 f"**Degraded above:** {data['degraded_ms']}ms\n"
                 f"**Status bar length:** {data['history_len']} checks\n"
+                f"**Bar style:** {data['style']}\n"
                 f"**Change alerts:** {'on' if data['alerts'] else 'off'}\n"
                 f"**Show links:** {'on' if data['show_links'] else 'off'}\n"
                 f"**Panel:** {'live' if data['enabled'] else 'removed'}\n"
@@ -701,6 +782,32 @@ def _uptime(history: List[int]) -> str:
         return "  --  "
     ratio = sum(1 for s in known if s in (UP, DEGRADED)) / len(known)
     return f"{ratio * 100:5.1f}%"
+
+
+def _runs(cells: List[int]) -> List[Tuple[int, int]]:
+    """Collapse a cell list into (state, count) runs."""
+    runs: List[Tuple[int, int]] = []
+    for state in cells:
+        if runs and runs[-1][0] == state:
+            runs[-1] = (state, runs[-1][1] + 1)
+        else:
+            runs.append((state, 1))
+    return runs
+
+
+def _sparkline(latencies: List[Optional[int]], length: int) -> str:
+    """Response-time trend, with gaps where a check failed."""
+    recent = latencies[-length:]
+    known = [v for v in recent if v]
+    if not known:
+        return ""
+    low, high = min(known), max(known)
+    span = max(high - low, 1)
+    bars = "".join(
+        SPARK[min(len(SPARK) - 1, int((v - low) / span * (len(SPARK) - 1)))] if v else "\u00b7"
+        for v in recent
+    )
+    return f"`{bars}` {low}-{high}ms" if high != low else f"`{bars}` {low}ms"
 
 
 def _hostname(url: str) -> str:
