@@ -635,9 +635,12 @@ class StatusMonitor(commands.Cog):
         await self.config.guild(ctx.guild).enabled.set(True)
         await self._refresh_and_report(ctx)
 
-    @statusmon.command(name="delete", aliases=["unpost"])
+    @statusmon.command(name="unpost", aliases=["removepanel", "hide"])
     async def stm_delete(self, ctx: commands.Context) -> None:
         """Delete the panel message and stop updating it.
+
+        This removes the message itself. To stop monitoring a single service,
+        use `[p]statusmon remove <name>` instead.
 
         Your services and their history are kept, so `[p]statusmon post` brings
         the panel straight back.

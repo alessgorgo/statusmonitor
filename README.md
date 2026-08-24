@@ -88,16 +88,17 @@ All commands live under `[p]statusmon` (alias `[p]stm`) and need admin or Manage
 | `links <on/off>` | Show each service's link on the panel (default off) |
 | `post` | Post a fresh panel, replacing the old one |
 | `refresh` | Check everything right now |
-| `delete` | Delete the panel message and stop updating (alias `unpost`) |
+| `unpost` | Delete the panel message and stop updating (aliases `removepanel`, `hide`) |
 | `bind <link\|id>` | Turn one of the bot's existing messages into the panel |
 | `clearhistory` | Wipe the recorded history |
 | `settings` | Show the current configuration |
 
 ## Removing and moving the panel
 
-`[p]statusmon delete` deletes the panel message and stops the updates — services and
+`[p]statusmon unpost` deletes the panel message and stops the updates — services and
 their history are kept, and `[p]statusmon post` (or `[p]statusmon refresh`) brings it
-back. While it is removed the background loop leaves the channel alone, so changing
+back. It is called `unpost` rather than `delete` because `[p]statusmon delete` is an
+alias of `remove`, which removes a single service. While it is removed the background loop leaves the channel alone, so changing
 settings will not make it reappear on its own.
 
 `[p]statusmon bind <message link>` points the cog at a message it already posted, for
